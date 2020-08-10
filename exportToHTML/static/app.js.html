@@ -1,0 +1,484 @@
+<html>
+<head>
+<title>app.js</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #0000ff;}
+.s3 { color: #808080; font-style: italic;}
+.s4 { color: #008000; font-weight: bold;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+app.js</font>
+</center></td></tr></table>
+<pre><span class="s0">var </span>OV;
+<span class="s0">var </span>session;
+
+<span class="s0">var </span>sessionName;
+<span class="s0">var </span>token;
+<span class="s0">var </span>numVideos = <span class="s2">0</span>;
+
+
+<span class="s3">/* OPENVIDU METHODS */</span>
+
+<span class="s0">function </span>joinSession() {
+	getToken(<span class="s0">function </span>() {
+
+		<span class="s3">// --- 1) Get an OpenVidu object ---</span>
+
+		OV = <span class="s0">new </span>OpenVidu();
+
+		<span class="s3">// --- 2) Init a session ---</span>
+
+		session = OV.initSession();
+
+		<span class="s3">// --- 3) Specify the actions when events take place in the session ---</span>
+
+		session.on(<span class="s4">'connectionCreated'</span>, event =&gt; {
+			pushEvent(event);
+		});
+
+		session.on(<span class="s4">'connectionDestroyed'</span>, event =&gt; {
+			pushEvent(event);
+		});
+
+		<span class="s3">// On every new Stream received...</span>
+		session.on(<span class="s4">'streamCreated'</span>, event =&gt; {
+			pushEvent(event);
+
+			<span class="s3">// Subscribe to the Stream to receive it</span>
+			<span class="s3">// HTML video will be appended to element with 'video-container' id</span>
+			<span class="s0">var </span>subscriber = session.subscribe(event.stream, <span class="s4">'video-container'</span>);
+
+			<span class="s3">// When the HTML video has been appended to DOM...</span>
+			subscriber.on(<span class="s4">'videoElementCreated'</span>, event =&gt; {
+				pushEvent(event);
+				<span class="s3">// Add a new HTML element for the user's name and nickname over its video</span>
+				updateNumVideos(<span class="s2">1</span>);
+			});
+
+			<span class="s3">// When the HTML video has been appended to DOM...</span>
+			subscriber.on(<span class="s4">'videoElementDestroyed'</span>, event =&gt; {
+				pushEvent(event);
+				<span class="s3">// Add a new HTML element for the user's name and nickname over its video</span>
+				updateNumVideos(-<span class="s2">1</span>);
+			});
+
+			<span class="s3">// When the subscriber stream has started playing media...</span>
+			subscriber.on(<span class="s4">'streamPlaying'</span>, event =&gt; {
+				pushEvent(event);
+			});
+		});
+
+		session.on(<span class="s4">'streamDestroyed'</span>, event =&gt; {
+			pushEvent(event);
+		});
+
+		session.on(<span class="s4">'sessionDisconnected'</span>, event =&gt; {
+			pushEvent(event);
+			<span class="s0">if </span>(event.reason !== <span class="s4">'disconnect'</span>) {
+				removeUser();
+			}
+			<span class="s0">if </span>(event.reason !== <span class="s4">'sessionClosedByServer'</span>) {
+				session = <span class="s0">null</span>;
+				numVideos = <span class="s2">0</span>;
+				$(<span class="s4">'#join'</span>).show();
+				$(<span class="s4">'#session'</span>).hide();
+			}
+		});
+
+		session.on(<span class="s4">'recordingStarted'</span>, event =&gt; {
+			pushEvent(event);
+		});
+
+		session.on(<span class="s4">'recordingStopped'</span>, event =&gt; {
+			pushEvent(event);
+		});
+
+		<span class="s3">// --- 4) Connect to the session passing the retrieved token and some more data from</span>
+		<span class="s3">//        the client (in this case a JSON with the nickname chosen by the user) ---</span>
+
+		session.connect(token)
+			.then(() =&gt; {
+
+				<span class="s3">// --- 5) Set page layout for active call ---</span>
+
+				$(<span class="s4">'#session-title'</span>).text(sessionName);
+				$(<span class="s4">'#join'</span>).hide();
+				$(<span class="s4">'#session'</span>).show();
+
+				<span class="s3">// --- 6) Get your own camera stream ---</span>
+
+				<span class="s0">var </span>publisher = OV.initPublisher(<span class="s4">'video-container'</span>, {
+					audioSource: undefined, <span class="s3">// The source of audio. If undefined default microphone</span>
+					videoSource: undefined, <span class="s3">// The source of video. If undefined default webcam</span>
+					publishAudio: <span class="s0">true</span>, <span class="s3">// Whether you want to start publishing with your audio unmuted or not</span>
+					publishVideo: <span class="s0">true</span>, <span class="s3">// Whether you want to start publishing with your video enabled or not</span>
+					resolution: <span class="s4">'640x480'</span>, <span class="s3">// The resolution of your video</span>
+					frameRate: <span class="s2">30</span>, <span class="s3">// The frame rate of your video</span>
+					insertMode: <span class="s4">'APPEND'</span>, <span class="s3">// How the video is inserted in the target element 'video-container'</span>
+					mirror: <span class="s0">false </span><span class="s3">// Whether to mirror your local video or not</span>
+				});
+
+				<span class="s3">// --- 7) Specify the actions when events take place in our publisher ---</span>
+
+				<span class="s3">// When the publisher stream has started playing media...</span>
+				publisher.on(<span class="s4">'accessAllowed'</span>, event =&gt; {
+					pushEvent({
+						type: <span class="s4">'accessAllowed'</span>
+					});
+				});
+
+				publisher.on(<span class="s4">'accessDenied'</span>, event =&gt; {
+					pushEvent(event);
+				});
+
+				publisher.on(<span class="s4">'accessDialogOpened'</span>, event =&gt; {
+					pushEvent({
+						type: <span class="s4">'accessDialogOpened'</span>
+					});
+				});
+
+				publisher.on(<span class="s4">'accessDialogClosed'</span>, event =&gt; {
+					pushEvent({
+						type: <span class="s4">'accessDialogClosed'</span>
+					});
+				});
+
+				<span class="s3">// When the publisher stream has started playing media...</span>
+				publisher.on(<span class="s4">'streamCreated'</span>, event =&gt; {
+					pushEvent(event);
+				});
+
+				<span class="s3">// When our HTML video has been added to DOM...</span>
+				publisher.on(<span class="s4">'videoElementCreated'</span>, event =&gt; {
+					pushEvent(event);
+					updateNumVideos(<span class="s2">1</span>);
+					$(event.element).prop(<span class="s4">'muted'</span>, <span class="s0">true</span>); <span class="s3">// Mute local video</span>
+				});
+
+				<span class="s3">// When the HTML video has been appended to DOM...</span>
+				publisher.on(<span class="s4">'videoElementDestroyed'</span>, event =&gt; {
+					pushEvent(event);
+					<span class="s3">// Add a new HTML element for the user's name and nickname over its video</span>
+					updateNumVideos(-<span class="s2">1</span>);
+				});
+
+				<span class="s3">// When the publisher stream has started playing media...</span>
+				publisher.on(<span class="s4">'streamPlaying'</span>, event =&gt; {
+					pushEvent(event);
+				});
+
+				<span class="s3">// --- 8) Publish your stream ---</span>
+
+				session.publish(publisher);
+
+			})
+			.<span class="s0">catch</span>(error =&gt; {
+				console.warn(<span class="s4">'There was an error connecting to the session:'</span>, error.code, error.message);
+			});
+
+		<span class="s0">return false</span>;
+	});
+}
+
+<span class="s0">function </span>leaveSession() {
+
+	<span class="s3">// --- 9) Leave the session by calling 'disconnect' method over the Session object ---</span>
+	session.disconnect();
+
+}
+
+<span class="s3">/* OPENVIDU METHODS */</span>
+
+
+
+<span class="s3">/* APPLICATION REST METHODS */</span>
+
+<span class="s0">function </span>getToken(callback) {
+	sessionName = $(<span class="s4">&quot;#sessionName&quot;</span>).val(); <span class="s3">// Video-call chosen by the user</span>
+
+	httpRequest(
+		<span class="s4">'POST'</span>,
+		<span class="s4">'api/get-token'</span>, {
+			sessionName: sessionName
+		},
+		<span class="s4">'Request of TOKEN gone WRONG:'</span>,
+		res =&gt; {
+			token = res[<span class="s2">0</span>]; <span class="s3">// Get token from response</span>
+			console.warn(<span class="s4">'Request of TOKEN gone WELL (TOKEN:' </span>+ token + <span class="s4">')'</span>);
+			callback(token); <span class="s3">// Continue the join operation</span>
+		}
+	);
+}
+
+<span class="s0">function </span>removeUser() {
+	httpRequest(
+		<span class="s4">'POST'</span>,
+		<span class="s4">'api/remove-user'</span>, {
+			sessionName: sessionName,
+			token: token
+		},
+		<span class="s4">'User couldn</span><span class="s0">\'</span><span class="s4">t be removed from session'</span>,
+		res =&gt; {
+			console.warn(<span class="s4">&quot;You have been removed from session &quot; </span>+ sessionName);
+		}
+	);
+}
+
+<span class="s0">function </span>closeSession() {
+	httpRequest(
+		<span class="s4">'DELETE'</span>,
+		<span class="s4">'api/close-session'</span>, {
+			sessionName: sessionName
+		},
+		<span class="s4">'Session couldn</span><span class="s0">\'</span><span class="s4">t be closed'</span>,
+		res =&gt; {
+			console.warn(<span class="s4">&quot;Session &quot; </span>+ sessionName + <span class="s4">&quot; has been closed&quot;</span>);
+		}
+	);
+}
+
+<span class="s0">function </span>fetchInfo() {
+	httpRequest(
+		<span class="s4">'POST'</span>,
+		<span class="s4">'api/fetch-info'</span>, {
+			sessionName: sessionName
+		},
+		<span class="s4">'Session couldn</span><span class="s0">\'</span><span class="s4">t be fetched'</span>,
+		res =&gt; {
+			console.warn(<span class="s4">&quot;Session info has been fetched&quot;</span>);
+			$(<span class="s4">'#textarea-http'</span>).text(JSON.stringify(res, <span class="s0">null</span>, <span class="s4">&quot;</span><span class="s0">\t</span><span class="s4">&quot;</span>));
+		}
+	);
+}
+
+<span class="s0">function </span>fetchAll() {
+	httpRequest(
+		<span class="s4">'GET'</span>,
+		<span class="s4">'api/fetch-all'</span>, {},
+		<span class="s4">'All session info couldn</span><span class="s0">\'</span><span class="s4">t be fetched'</span>,
+		res =&gt; {
+			console.warn(<span class="s4">&quot;All session info has been fetched&quot;</span>);
+			$(<span class="s4">'#textarea-http'</span>).text(JSON.stringify(res, <span class="s0">null</span>, <span class="s4">&quot;</span><span class="s0">\t</span><span class="s4">&quot;</span>));
+		}
+	);
+}
+
+<span class="s0">function </span>forceDisconnect() {
+	httpRequest(
+		<span class="s4">'DELETE'</span>,
+		<span class="s4">'api/force-disconnect'</span>, {
+			sessionName: sessionName,
+			connectionId: document.getElementById(<span class="s4">'forceValue'</span>).value
+		},
+		<span class="s4">'Connection couldn</span><span class="s0">\'</span><span class="s4">t be closed'</span>,
+		res =&gt; {
+			console.warn(<span class="s4">&quot;Connection has been closed&quot;</span>);
+		}
+	);
+}
+
+<span class="s0">function </span>forceUnpublish() {
+	httpRequest(
+		<span class="s4">'DELETE'</span>,
+		<span class="s4">'api/force-unpublish'</span>, {
+			sessionName: sessionName,
+			streamId: document.getElementById(<span class="s4">'forceValue'</span>).value
+		},
+		<span class="s4">'Stream couldn</span><span class="s0">\'</span><span class="s4">t be closed'</span>,
+		res =&gt; {
+			console.warn(<span class="s4">&quot;Stream has been closed&quot;</span>);
+		}
+	);
+}
+
+<span class="s0">function </span>httpRequest(method, url, body, errorMsg, callback) {
+	$(<span class="s4">'#textarea-http'</span>).text(<span class="s4">''</span>);
+	<span class="s0">var </span>http = <span class="s0">new </span>XMLHttpRequest();
+	http.open(method, url, <span class="s0">true</span>);
+	http.setRequestHeader(<span class="s4">'Content-type'</span>, <span class="s4">'application/json'</span>);
+	http.addEventListener(<span class="s4">'readystatechange'</span>, processRequest, <span class="s0">false</span>);
+	http.send(JSON.stringify(body));
+
+	<span class="s0">function </span>processRequest() {
+		<span class="s0">if </span>(http.readyState == <span class="s2">4</span>) {
+			<span class="s0">if </span>(http.status == <span class="s2">200</span>) {
+				<span class="s0">try </span>{
+					callback(JSON.parse(http.responseText));
+				} <span class="s0">catch </span>(e) {
+					callback(e);
+				}
+			} <span class="s0">else </span>{
+				console.warn(errorMsg + <span class="s4">' (' </span>+ http.status + <span class="s4">')'</span>);
+				console.warn(http.responseText);
+				$(<span class="s4">'#textarea-http'</span>).text(errorMsg + <span class="s4">&quot;: HTTP &quot; </span>+ http.status + <span class="s4">&quot; (&quot; </span>+ http.responseText + <span class="s4">&quot;)&quot;</span>);
+			}
+		}
+	}
+}
+
+<span class="s3">/** 
+开始录视频 
+*/</span>
+<span class="s0">function </span>startRecording() {
+	<span class="s0">var </span>outputMode = $(<span class="s4">'input[name=outputMode]:checked'</span>).val();
+	<span class="s0">var </span>hasAudio = $(<span class="s4">'#has-audio-checkbox'</span>).prop(<span class="s4">'checked'</span>);
+	<span class="s0">var </span>hasVideo = $(<span class="s4">'#has-video-checkbox'</span>).prop(<span class="s4">'checked'</span>);
+	httpRequest(
+		<span class="s4">'POST'</span>,
+		<span class="s4">'api/recording/start'</span>, {
+			session: session.sessionId,
+			outputMode: outputMode,
+			hasAudio: hasAudio,
+			hasVideo: hasVideo
+		},
+		<span class="s4">'Start recording WRONG'</span>,
+		res =&gt; {
+			console.log(res);
+			document.getElementById(<span class="s4">'forceRecordingId'</span>).value = res.id;
+			checkBtnsRecordings();
+			$(<span class="s4">'#textarea-http'</span>).text(JSON.stringify(res, <span class="s0">null</span>, <span class="s4">&quot;</span><span class="s0">\t</span><span class="s4">&quot;</span>));
+		}
+	);
+}
+
+<span class="s0">function </span>stopRecording() {
+	<span class="s0">var </span>forceRecordingId = document.getElementById(<span class="s4">'forceRecordingId'</span>).value;
+	httpRequest(
+		<span class="s4">'POST'</span>,
+		<span class="s4">'api/recording/stop'</span>, {
+			recording: forceRecordingId
+		},
+		<span class="s4">'Stop recording WRONG'</span>,
+		res =&gt; {
+			console.log(res);
+			$(<span class="s4">'#textarea-http'</span>).text(JSON.stringify(res, <span class="s0">null</span>, <span class="s4">&quot;</span><span class="s0">\t</span><span class="s4">&quot;</span>));
+		}
+	);
+}
+
+<span class="s3">/** 
+删除记录 
+*/</span>
+<span class="s0">function </span>deleteRecording() {
+	<span class="s0">var </span>forceRecordingId = document.getElementById(<span class="s4">'forceRecordingId'</span>).value;
+	httpRequest(
+		<span class="s4">'DELETE'</span>,
+		<span class="s4">'api/recording/delete'</span>, {
+			recording: forceRecordingId
+		},
+		<span class="s4">'Delete recording WRONG'</span>,
+		res =&gt; {
+			console.log(<span class="s4">&quot;DELETE ok&quot;</span>);
+			$(<span class="s4">'#textarea-http'</span>).text(<span class="s4">&quot;DELETE ok&quot;</span>);
+		}
+	);
+}
+
+<span class="s3">/** 
+获取记录 
+*/</span>
+<span class="s0">function </span>getRecording() {
+	<span class="s0">var </span>forceRecordingId = document.getElementById(<span class="s4">'forceRecordingId'</span>).value;
+	httpRequest(
+		<span class="s4">'GET'</span>,
+		<span class="s4">'api/recording/get/' </span>+ forceRecordingId, {},
+		<span class="s4">'Get recording WRONG'</span>,
+		res =&gt; {
+			console.log(res);
+			$(<span class="s4">'#textarea-http'</span>).text(JSON.stringify(res, <span class="s0">null</span>, <span class="s4">&quot;</span><span class="s0">\t</span><span class="s4">&quot;</span>));
+		}
+	);
+}
+
+<span class="s0">function </span>listRecordings() {
+	httpRequest(
+		<span class="s4">'GET'</span>,
+		<span class="s4">'api/recording/list'</span>, {},
+		<span class="s4">'List recordings WRONG'</span>,
+		res =&gt; {
+			console.log(res);
+			$(<span class="s4">'#textarea-http'</span>).text(JSON.stringify(res, <span class="s0">null</span>, <span class="s4">&quot;</span><span class="s0">\t</span><span class="s4">&quot;</span>));
+		}
+	);
+}
+
+<span class="s3">/* APPLICATION REST METHODS */</span>
+
+
+
+<span class="s3">/* APPLICATION BROWSER METHODS */</span>
+
+events = <span class="s4">''</span>;
+
+window.onbeforeunload = <span class="s0">function </span>() { <span class="s3">// Gracefully leave session</span>
+	<span class="s0">if </span>(session) {
+		removeUser();
+		leaveSession();
+	}
+}
+
+<span class="s0">function </span>updateNumVideos(i) {
+	numVideos += i;
+	$(<span class="s4">'video'</span>).removeClass();
+	<span class="s0">switch </span>(numVideos) {
+		<span class="s0">case </span><span class="s2">1</span>:
+			$(<span class="s4">'video'</span>).addClass(<span class="s4">'two'</span>);
+			<span class="s0">break</span>;
+		<span class="s0">case </span><span class="s2">2</span>:
+			$(<span class="s4">'video'</span>).addClass(<span class="s4">'two'</span>);
+			<span class="s0">break</span>;
+		<span class="s0">case </span><span class="s2">3</span>:
+			$(<span class="s4">'video'</span>).addClass(<span class="s4">'three'</span>);
+			<span class="s0">break</span>;
+		<span class="s0">case </span><span class="s2">4</span>:
+			$(<span class="s4">'video'</span>).addClass(<span class="s4">'four'</span>);
+			<span class="s0">break</span>;
+	}
+}
+
+<span class="s0">function </span>checkBtnsForce() {
+	<span class="s0">if </span>(document.getElementById(<span class="s4">&quot;forceValue&quot;</span>).value === <span class="s4">&quot;&quot;</span>) {
+		document.getElementById(<span class="s4">'buttonForceUnpublish'</span>).disabled = <span class="s0">true</span>;
+		document.getElementById(<span class="s4">'buttonForceDisconnect'</span>).disabled = <span class="s0">true</span>;
+	} <span class="s0">else </span>{
+		document.getElementById(<span class="s4">'buttonForceUnpublish'</span>).disabled = <span class="s0">false</span>;
+		document.getElementById(<span class="s4">'buttonForceDisconnect'</span>).disabled = <span class="s0">false</span>;
+	}
+}
+
+<span class="s0">function </span>checkBtnsRecordings() {
+	<span class="s0">if </span>(document.getElementById(<span class="s4">&quot;forceRecordingId&quot;</span>).value === <span class="s4">&quot;&quot;</span>) {
+		document.getElementById(<span class="s4">'buttonGetRecording'</span>).disabled = <span class="s0">true</span>;
+		document.getElementById(<span class="s4">'buttonStopRecording'</span>).disabled = <span class="s0">true</span>;
+		document.getElementById(<span class="s4">'buttonDeleteRecording'</span>).disabled = <span class="s0">true</span>;
+	} <span class="s0">else </span>{
+		document.getElementById(<span class="s4">'buttonGetRecording'</span>).disabled = <span class="s0">false</span>;
+		document.getElementById(<span class="s4">'buttonStopRecording'</span>).disabled = <span class="s0">false</span>;
+		document.getElementById(<span class="s4">'buttonDeleteRecording'</span>).disabled = <span class="s0">false</span>;
+	}
+}
+
+<span class="s0">function </span>pushEvent(event) {
+	events += (!events ? <span class="s4">'' </span>: <span class="s4">'</span><span class="s0">\n</span><span class="s4">'</span>) + event.type;
+	$(<span class="s4">'#textarea-events'</span>).text(events);
+}
+
+<span class="s0">function </span>clearHttpTextarea() {
+	$(<span class="s4">'#textarea-http'</span>).text(<span class="s4">''</span>);
+}
+
+<span class="s0">function </span>clearEventsTextarea() {
+	$(<span class="s4">'#textarea-events'</span>).text(<span class="s4">''</span>);
+	events = <span class="s4">''</span>;
+}
+
+<span class="s3">/* APPLICATION BROWSER METHODS */</span></pre>
+</body>
+</html>
